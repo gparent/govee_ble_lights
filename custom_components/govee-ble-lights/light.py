@@ -235,8 +235,10 @@ class GoveeBluetoothLight(LightEntity):
 
         if ATTR_BRIGHTNESS in kwargs:
             brightness = kwargs.get(ATTR_BRIGHTNESS, 255)
-            commands.append(self._prepareSinglePacketData(LedCommand.BRIGHTNESS, [brightness]))
-            self._brightness = brightness
+            # This value's maximum is not necessarily 100 and needs to be mapped for some models
+            packet_brightness = math.ceil((brightness / 255) * 100)
+            commands.append(self._prepareSinglePacketData(LedCommand.BRIGHTNESS, [packet_brightness]))
+            self._brightness = kwargs.get(ATTR_BRIGHTNESS, 255)
 
         if ATTR_RGB_COLOR in kwargs:
             red, green, blue = kwargs.get(ATTR_RGB_COLOR)
