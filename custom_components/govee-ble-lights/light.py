@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import array
 import logging
+import math
 import re
 
 from enum import IntEnum
@@ -15,6 +16,7 @@ from homeassistant.components.light import (ATTR_BRIGHTNESS, ATTR_RGB_COLOR, ATT
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.storage import Store
+from homeassistant.util.color import brightness_to_value, value_to_brightness
 
 from .const import DOMAIN
 from pathlib import Path
@@ -25,6 +27,7 @@ from . import Hub
 
 _LOGGER = logging.getLogger(__name__)
 
+BRIGHTNESS_SCALE = (1, 100)
 UUID_CONTROL_CHARACTERISTIC = '00010203-0405-0607-0809-0a0b0c0d2b11'
 EFFECT_PARSE = re.compile("\[(\d+)/(\d+)/(\d+)/(\d+)]")
 SEGMENTED_MODELS = ['H6053', 'H6072', 'H6102', 'H6199']
@@ -234,9 +237,9 @@ class GoveeBluetoothLight(LightEntity):
         self._state = True
 
         if ATTR_BRIGHTNESS in kwargs:
-            brightness = kwargs.get(ATTR_BRIGHTNESS, 255)
+            brightness = math.ceil(brightness_to_value(BRIGHTNESS_SCALE, kwargs[ATTR_BRIGHTNESS]))
             commands.append(self._prepareSinglePacketData(LedCommand.BRIGHTNESS, [brightness]))
-            self._brightness = brightness
+            self._brightness = kwargs[ATTR_BRIGHTNESS]
 
         if ATTR_RGB_COLOR in kwargs:
             red, green, blue = kwargs.get(ATTR_RGB_COLOR)
