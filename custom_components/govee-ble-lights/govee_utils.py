@@ -1,5 +1,5 @@
 import array
-
+import math
 
 def prepareSinglePacketData(cmd, payload):
         if not isinstance(cmd, int):
