@@ -19,8 +19,9 @@ from homeassistant.helpers.storage import Store
 from .const import DOMAIN
 from pathlib import Path
 import json
-from .govee_utils import prepareMultiplePacketsData
+from .govee_utils import convert_temp_to_RGB, prepareMultiplePacketsData
 import base64
+import math
 from . import Hub
 
 _LOGGER = logging.getLogger(__name__)
@@ -28,6 +29,8 @@ _LOGGER = logging.getLogger(__name__)
 UUID_CONTROL_CHARACTERISTIC = '00010203-0405-0607-0809-0a0b0c0d2b11'
 EFFECT_PARSE = re.compile("\[(\d+)/(\d+)/(\d+)/(\d+)]")
 SEGMENTED_MODELS = ['H6053', 'H6072', 'H6102', 'H6199']
+COLOR_TEMP_MODELS = ['H6006', 'H6008']
+
 
 class LedCommand(IntEnum):
     """ A control command packet's type. """
@@ -39,13 +42,14 @@ class LedCommand(IntEnum):
 class LedMode(IntEnum):
     """
     The mode in which a color change happens in.
-    
-    Currently only manual is supported.
+
+    Currently microphone and scenes are unsupported.
     """
     MANUAL = 0x02
     MICROPHONE = 0x06
     SCENES = 0x05
     SEGMENTS = 0x15
+    RGBWW = 0x0d
 
 
 async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, async_add_entities):
@@ -177,8 +181,8 @@ class GoveeAPILight(LightEntity, dict):
 
 
 class GoveeBluetoothLight(LightEntity):
-    _attr_color_mode = ColorMode.RGB
-    _attr_supported_color_modes = {ColorMode.RGB}
+    _attr_min_color_temp_kelvin = 2700
+    _attr_max_color_temp_kelvin = 6500
     _attr_supported_features = LightEntityFeature(
         LightEntityFeature.EFFECT | LightEntityFeature.FLASH | LightEntityFeature.TRANSITION)
 
@@ -187,6 +191,19 @@ class GoveeBluetoothLight(LightEntity):
         self._mac = hub.address
         self._model = config_entry.data["model"]
         self._is_segmented = self._model in SEGMENTED_MODELS
+        self._is_color_temp = self._model in COLOR_TEMP_MODELS
+
+        color_modes: set[ColorMode] = set()
+
+        if self._is_color_temp:
+            color_modes.add(ColorMode.COLOR_TEMP)
+
+        if ColorMode.COLOR_TEMP in color_modes:
+            self._attr_supported_color_modes = {ColorMode.COLOR_TEMP, ColorMode.RGB}
+        else:
+            self._attr_supported_color_modes = {ColorMode.RGB}
+
+        self._attr_color_mode = ColorMode.RGB
         self._ble_device = ble_device
         self._state = None
         self._brightness = None
@@ -247,8 +264,27 @@ class GoveeBluetoothLight(LightEntity):
                 commands.append(self._prepareSinglePacketData(LedCommand.COLOR,
                                                               [LedMode.SEGMENTS, 0x01, red, green, blue, 0x00, 0x00, 0x00,
                                                                0x00, 0x00, 0xFF, 0x7F]))
+            elif self._is_color_temp:
+                commands.append(self._prepareSinglePacketData(LedCommand.COLOR, [LedMode.RGBWW, red, green, blue]))
             else:
                 commands.append(self._prepareSinglePacketData(LedCommand.COLOR, [LedMode.MANUAL, red, green, blue]))
+
+            self._attr_color_mode = ColorMode.RGB
+            self._attr_rgb_color = (red, green, blue)
+        elif ATTR_COLOR_TEMP_KELVIN in kwargs:
+            kelvin = kwargs.get(ATTR_COLOR_TEMP_KELVIN)
+
+            red, green, blue = convert_temp_to_RGB(kelvin)
+            kelvin_bytes = kelvin.to_bytes(2)
+
+            commands.append(self._prepareSinglePacketData(LedCommand.COLOR,
+                                                          [LedMode.RGBWW, red, green, blue,
+                                                           int(kelvin_bytes[0]), int(kelvin_bytes[1]),
+                                                           red, green, blue]))
+
+            self._attr_color_temp_kelvin = kelvin
+            self._attr_color_mode = ColorMode.COLOR_TEMP
+
         if ATTR_EFFECT in kwargs:
             effect = kwargs.get(ATTR_EFFECT)
             if len(effect) > 0:
