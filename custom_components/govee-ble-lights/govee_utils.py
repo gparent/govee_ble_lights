@@ -1,6 +1,5 @@
 import array
 
-
 def prepareSinglePacketData(cmd, payload):
         if not isinstance(cmd, int):
             raise ValueError('Invalid command')
