@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import array
 import logging
+import math
 import re
 
 from enum import IntEnum
@@ -15,7 +16,7 @@ from homeassistant.components.light import (ATTR_BRIGHTNESS, ATTR_RGB_COLOR, ATT
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.storage import Store
-import homeassistant.util.color as color_util
+from homeassistant.util.color import brightness_to_value, color_temperature_kelvin_to_mired, color_temperature_to_rgb, value_to_brightness
 
 from .const import DOMAIN
 from pathlib import Path
@@ -30,6 +31,7 @@ SCAN_INTERVAL = timedelta(seconds=30)
 
 _LOGGER = logging.getLogger(__name__)
 
+BRIGHTNESS_SCALE = (1, 100)
 UUID_CONTROL_CHARACTERISTIC = '00010203-0405-0607-0809-0a0b0c0d2b11'
 EFFECT_PARSE = re.compile("\[(\d+)/(\d+)/(\d+)/(\d+)]")
 SEGMENTED_MODELS = ['H6053', 'H6072', 'H6102', 'H6199']
@@ -99,8 +101,8 @@ class GoveeAPILight(LightEntity, dict):
                 color_modes.add(ColorMode.COLOR_TEMP)
                 self._attr_min_color_temp_kelvin = cap['parameters']['range']['min']
                 self._attr_max_color_temp_kelvin = cap['parameters']['range']['max']
-                self._attr_min_mireds = color_util.color_temperature_kelvin_to_mired(self._attr_min_color_temp_kelvin)
-                self._attr_max_mireds = color_util.color_temperature_kelvin_to_mired(self._attr_max_color_temp_kelvin)
+                self._attr_min_mireds = color_temperature_kelvin_to_mired(self._attr_min_color_temp_kelvin)
+                self._attr_max_mireds = color_temperature_kelvin_to_mired(self._attr_max_color_temp_kelvin)
             if cap['instance'] == 'colorRgb':
                 color_modes.add(ColorMode.RGB)
             if cap['instance'] == 'lightScene':
@@ -135,7 +137,7 @@ class GoveeAPILight(LightEntity, dict):
                 value = cap['state']['value']
                 if value != 0:
                     self._attr_color_temp_kelvin = value
-                    self._attr_color_temp = color_util.color_temperature_kelvin_to_mired(value)
+                    self._attr_color_temp = color_temperature_kelvin_to_mired(value)
             if cap['instance'] == 'colorRgb':
                 num = cap['state']['value']
                 self._attr_rgb_color = ((num >> 16) & 0xFF, (num >> 8) & 0xFF, num & 0xFF)
@@ -260,9 +262,9 @@ class GoveeBluetoothLight(LightEntity):
         self._state = True
 
         if ATTR_BRIGHTNESS in kwargs:
-            brightness = kwargs.get(ATTR_BRIGHTNESS, 255)
+            brightness = math.ceil(brightness_to_value(BRIGHTNESS_SCALE, kwargs[ATTR_BRIGHTNESS]))
             commands.append(self._prepareSinglePacketData(LedCommand.BRIGHTNESS, [brightness]))
-            self._brightness = brightness
+            self._brightness = kwargs[ATTR_BRIGHTNESS]
 
         if ATTR_RGB_COLOR in kwargs:
             red, green, blue = kwargs.get(ATTR_RGB_COLOR)
