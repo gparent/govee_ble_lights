@@ -1,5 +1,30 @@
 import array
 
+
+def prepareSinglePacketData(cmd, payload):
+        if not isinstance(cmd, int):
+            raise ValueError('Invalid command')
+        if not isinstance(payload, bytes) and not (
+                isinstance(payload, list) and all(isinstance(x, int) for x in payload)):
+            raise ValueError('Invalid payload')
+        if len(payload) > 17:
+            raise ValueError('Payload too long')
+
+        cmd = cmd & 0xFF
+        payload = bytes(payload)
+
+        frame = bytes([0x33, cmd]) + bytes(payload)
+        # pad frame data to 19 bytes (plus checksum)
+        frame += bytes([0] * (19 - len(frame)))
+
+        # The checksum is calculated by XORing all data bytes
+        checksum = 0
+        for b in frame:
+            checksum ^= b
+
+        frame += bytes([checksum & 0xFF])
+        return frame
+
 def prepareMultiplePacketsData(protocol_type, header_array, data):
     result = []
 
