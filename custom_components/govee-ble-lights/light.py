@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import logging
-import re
 
 from enum import IntEnum
 import bleak_retry_connector
 
 from bleak import BleakClient
 from homeassistant.components import bluetooth
-from homeassistant.components.light import (ATTR_BRIGHTNESS, ATTR_RGB_COLOR, ATTR_EFFECT, ColorMode, LightEntity,
+from homeassistant.components.light import (ATTR_BRIGHTNESS, ATTR_RGB_COLOR, ColorMode, LightEntity,
                                             LightEntityFeature, ATTR_COLOR_TEMP_KELVIN)
 
 from homeassistant.core import HomeAssistant
@@ -17,7 +16,6 @@ from homeassistant.helpers.storage import Store
 
 from .const import DOMAIN
 from pathlib import Path
-import json
 from .govee_utils import prepareMultiplePacketsData, prepareSinglePacketData
 import base64
 from . import Hub
@@ -25,7 +23,6 @@ from . import Hub
 _LOGGER = logging.getLogger(__name__)
 
 UUID_CONTROL_CHARACTERISTIC = '00010203-0405-0607-0809-0a0b0c0d2b11'
-EFFECT_PARSE = re.compile("\[(\d+)/(\d+)/(\d+)/(\d+)]")
 SEGMENTED_MODELS = ['H6053', 'H6072', 'H6102', 'H6199']
 
 class LedCommand(IntEnum):
@@ -62,7 +59,7 @@ class GoveeBluetoothLight(LightEntity):
     _attr_color_mode = ColorMode.RGB
     _attr_supported_color_modes = {ColorMode.RGB}
     _attr_supported_features = LightEntityFeature(
-        LightEntityFeature.EFFECT | LightEntityFeature.FLASH | LightEntityFeature.TRANSITION)
+        LightEntityFeature.FLASH | LightEntityFeature.TRANSITION)
 
     def __init__(self, hub: Hub, ble_device, config_entry: ConfigEntry) -> None:
         """Initialize an bluetooth light."""
@@ -72,24 +69,6 @@ class GoveeBluetoothLight(LightEntity):
         self._ble_device = ble_device
         self._state = None
         self._brightness = None
-
-    @property
-    def effect_list(self) -> list[str] | None:
-        effect_list = []
-        json_data = json.loads(Path(Path(__file__).parent / "jsons" / (self._model + ".json")).read_text())
-        for categoryIdx, category in enumerate(json_data['data']['categories']):
-            for sceneIdx, scene in enumerate(category['scenes']):
-                for leffectIdx, lightEffect in enumerate(scene['lightEffects']):
-                    for seffectIxd, specialEffect in enumerate(lightEffect['specialEffect']):
-                        # if 'supportSku' not in specialEffect or self._model in specialEffect['supportSku']:
-                        # Workaround cause we need to store some metadata in effect (effect names not unique)
-                        indexes = str(categoryIdx) + "/" + str(sceneIdx) + "/" + str(leffectIdx) + "/" + str(
-                            seffectIxd)
-                        effect_list.append(
-                            category['categoryName'] + " - " + scene['sceneName'] + ' - ' + lightEffect[
-                                'scenceName'] + " [" + indexes + "]")
-
-        return effect_list
 
     @property
     def name(self) -> str:
@@ -129,30 +108,6 @@ class GoveeBluetoothLight(LightEntity):
                                                                0x00, 0x00, 0xFF, 0x7F]))
             else:
                 commands.append(self.prepareSinglePacketData(LedCommand.COLOR, [LedMode.MANUAL, red, green, blue]))
-        if ATTR_EFFECT in kwargs:
-            effect = kwargs.get(ATTR_EFFECT)
-            if len(effect) > 0:
-                search = EFFECT_PARSE.search(effect)
-
-                # Parse effect indexes
-                categoryIndex = int(search.group(1))
-                sceneIndex = int(search.group(2))
-                lightEffectIndex = int(search.group(3))
-                specialEffectIndex = int(search.group(4))
-
-                json_data = json.loads(Path(Path(__file__).parent / "jsons" / (self._model + ".json")).read_text())
-                category = json_data['data']['categories'][categoryIndex]
-                scene = category['scenes'][sceneIndex]
-                lightEffect = scene['lightEffects'][lightEffectIndex]
-                specialEffect = lightEffect['specialEffect'][specialEffectIndex]
-
-                # Prepare packets to send big payload in separated chunks
-                for command in prepareMultiplePacketsData(0xa3,
-                                                          array.array('B', [0x02]),
-                                                          array.array('B',
-                                                                      base64.b64decode(specialEffect['scenceParam'])
-                                                                      )):
-                    commands.append(command)
 
         for command in commands:
             client = await self._connectBluetooth()
