@@ -9,7 +9,7 @@ import bleak_retry_connector
 from bleak import BleakClient
 from homeassistant.components import bluetooth
 from homeassistant.components.light import (ATTR_BRIGHTNESS, ATTR_RGB_COLOR, ColorMode, LightEntity,
-                                            LightEntityFeature, ATTR_COLOR_TEMP_KELVIN)
+                                            LightEntityFeature)
 
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
@@ -26,7 +26,6 @@ _LOGGER = logging.getLogger(__name__)
 
 BRIGHTNESS_SCALE = (1, 100)
 UUID_CONTROL_CHARACTERISTIC = '00010203-0405-0607-0809-0a0b0c0d2b11'
-SEGMENTED_MODELS = ['H6053', 'H6072', 'H6102', 'H6199']
 
 class LedCommand(IntEnum):
     """ A control command packet's type. """
@@ -38,13 +37,10 @@ class LedCommand(IntEnum):
 class LedMode(IntEnum):
     """
     The mode in which a color change happens in.
-    
+
     Currently only manual is supported.
     """
     MANUAL = 0x02
-    MICROPHONE = 0x06
-    SCENES = 0x05
-    SEGMENTS = 0x15
 
 
 async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, async_add_entities):
@@ -68,7 +64,6 @@ class GoveeBluetoothLight(LightEntity):
         """Initialize an bluetooth light."""
         self._mac = hub.address
         self._model = config_entry.data["model"]
-        self._is_segmented = self._model in SEGMENTED_MODELS
         self._ble_device = ble_device
         self._state = None
         self._brightness = None
@@ -104,13 +99,7 @@ class GoveeBluetoothLight(LightEntity):
 
         if ATTR_RGB_COLOR in kwargs:
             red, green, blue = kwargs.get(ATTR_RGB_COLOR)
-
-            if self._is_segmented:
-                commands.append(self.prepareSinglePacketData(LedCommand.COLOR,
-                                                              [LedMode.SEGMENTS, 0x01, red, green, blue, 0x00, 0x00, 0x00,
-                                                               0x00, 0x00, 0xFF, 0x7F]))
-            else:
-                commands.append(self.prepareSinglePacketData(LedCommand.COLOR, [LedMode.MANUAL, red, green, blue]))
+            commands.append(self.prepareSinglePacketData(LedCommand.COLOR, [LedMode.MANUAL, red, green, blue]))
 
         for command in commands:
             client = await self._connectBluetooth()
@@ -129,4 +118,3 @@ class GoveeBluetoothLight(LightEntity):
                 return client
             except:
                 continue
-
